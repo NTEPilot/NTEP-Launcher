@@ -40,6 +40,22 @@ jobs:
           repository: NTEPilot/NTEPilot
           ref: ${{ github.ref_name }}
           path: NTEPilot-src
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build frontend
+        working-directory: NTEPilot-src/frontend
+        run: |
+          npm install
+          npm run build
+      - name: Clean frontend dependencies
+        if: always()
+        uses: knicknic/os-specific-run@v1.0.3
+        with:
+          linux: rm -rf NTEPilot-src/frontend/node_modules
+          macos: rm -rf NTEPilot-src/frontend/node_modules
+          windows: rm -r -fo NTEPilot-src\frontend\node_modules -ErrorAction SilentlyContinue
       - name: Install uv
         uses: astral-sh/setup-uv@v5
       - name: Prepare bootstrap uv
