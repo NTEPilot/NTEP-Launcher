@@ -68,7 +68,6 @@ SetupIconFile=icons\icon.ico
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
-ShowLanguageDialog=no
 MinVersion=10.0
 DisableProgramGroupPage=yes
 PrivilegesRequired=admin
@@ -76,9 +75,10 @@ ArchitecturesAllowed={#TargetArchitecture}
 ArchitecturesInstallIn64BitMode={#TargetArchitecture}
 UninstallDisplayIcon={app}\{#AppExeName}
 
-; 目前只启用简体中文安装器界面。
+; 使用仓库内置的简体中文语言文件，不依赖 GitHub runner 的 Inno Setup
+; 安装目录里是否自带 ChineseSimplified.isl。
 [Languages]
-Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
+Name: "chinesesimplified"; MessagesFile: "installer\ChineseSimplified.isl"
 
 ; 可选桌面快捷方式，默认不勾选。
 [Tasks]

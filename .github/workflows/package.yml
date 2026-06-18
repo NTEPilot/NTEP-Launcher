@@ -106,108 +106,145 @@ jobs:
         run: choco install innosetup --no-progress -y
       - name: Build launcher
         run: cargo build --verbose --release
-      - name: Package
-        uses: knicknic/os-specific-run@v1.0.3
-        with:
-          macos: |
-            set -eux
-            rm -rf package-root "NTEP Launcher.app"
-            mkdir -p package-root/NTEPilot
-            ditto NTEPilot-src package-root/NTEPilot
-            rm -rf package-root/NTEPilot/.git
+      - name: Package macOS
+        if: ${{ startsWith(matrix.os, 'macos-') }}
+        shell: bash
+        run: |
+          set -eux
+          rm -rf package-root "NTEP Launcher.app"
+          mkdir -p package-root/NTEPilot
+          ditto NTEPilot-src package-root/NTEPilot
+          rm -rf package-root/NTEPilot/.git
 
-            cd package-root/NTEPilot
-            mkdir -p .venv/bin
-            export UV_PYTHON_INSTALL_DIR="$PWD/.venv/python"
-            uv python install --install-dir .venv/python --no-bin --managed-python 3.14.3
-            python_home="$(find .venv/python -maxdepth 1 -type d -name 'cpython-3.14.3-*' | head -n1)"
-            uv venv --allow-existing --relocatable --python "$python_home/bin/python3.14" .venv
-            cp "$NTEP_BOOTSTRAP_UV" .venv/bin/uv
-            chmod +x .venv/bin/uv
-            .venv/bin/python -c 'import sys; print(sys.version)'
-            .venv/bin/uv --version
+          cd package-root/NTEPilot
+          mkdir -p .venv/bin
+          export UV_PYTHON_INSTALL_DIR="$PWD/.venv/python"
+          uv python install --install-dir .venv/python --no-bin --managed-python 3.14.3
+          python_home="$(find .venv/python -maxdepth 1 -type d -name 'cpython-3.14.3-*' | head -n1)"
+          uv venv --allow-existing --relocatable --python "$python_home/bin/python3.14" .venv
+          cp "$NTEP_BOOTSTRAP_UV" .venv/bin/uv
+          chmod +x .venv/bin/uv
+          .venv/bin/python -c 'import sys; print(sys.version)'
+          .venv/bin/uv --version
 
-            cd ${{ github.workspace }}
-            mkdir -p "NTEP Launcher.app/Contents/MacOS"
-            cp target/release/ntep-launcher "NTEP Launcher.app/Contents/MacOS/"
-            mkdir -p "NTEP Launcher.app/Contents/Resources"
-            cp icons/icon.icns "NTEP Launcher.app/Contents/Resources/"
-            ditto package-root/NTEPilot "NTEP Launcher.app/Contents/NTEPilot"
-            cp Info.plist "NTEP Launcher.app/Contents/"
-            rdfind -minsize 128 -makehardlinks true "NTEP Launcher.app"
-            uv run python - <<EOF
-            import tarfile, lzma
-            with tarfile.open('NTEP-Launcher-${{ runner.os }}-$(uname -m).tar.xz', 'x:xz', preset=9|lzma.PRESET_EXTREME) as t:
-              t.add('NTEP Launcher.app')
-            EOF
-          linux: |
-            set -eux
-            rm -rf package-root
-            mkdir -p package-root/NTEPilot
-            cp -a NTEPilot-src/. package-root/NTEPilot/
-            rm -rf package-root/NTEPilot/.git
+          cd ${{ github.workspace }}
+          mkdir -p "NTEP Launcher.app/Contents/MacOS"
+          cp target/release/ntep-launcher "NTEP Launcher.app/Contents/MacOS/"
+          mkdir -p "NTEP Launcher.app/Contents/Resources"
+          cp icons/icon.icns "NTEP Launcher.app/Contents/Resources/"
+          ditto package-root/NTEPilot "NTEP Launcher.app/Contents/NTEPilot"
+          cp Info.plist "NTEP Launcher.app/Contents/"
+          rdfind -minsize 128 -makehardlinks true "NTEP Launcher.app"
+          uv run python - <<EOF
+          import tarfile, lzma
+          with tarfile.open('NTEP-Launcher-${{ runner.os }}-$(uname -m).tar.xz', 'x:xz', preset=9|lzma.PRESET_EXTREME) as t:
+            t.add('NTEP Launcher.app')
+          EOF
+      - name: Package Linux
+        if: ${{ startsWith(matrix.os, 'ubuntu-') }}
+        shell: bash
+        run: |
+          set -eux
+          rm -rf package-root
+          mkdir -p package-root/NTEPilot
+          cp -a NTEPilot-src/. package-root/NTEPilot/
+          rm -rf package-root/NTEPilot/.git
 
-            cd package-root/NTEPilot
-            mkdir -p .venv/bin
-            export UV_PYTHON_INSTALL_DIR="$PWD/.venv/python"
-            uv python install --install-dir .venv/python --no-bin --managed-python 3.14.3
-            python_home="$(find .venv/python -maxdepth 1 -type d -name 'cpython-3.14.3-*' | head -n1)"
-            uv venv --allow-existing --relocatable --python "$python_home/bin/python3.14" .venv
-            cp "$NTEP_BOOTSTRAP_UV" .venv/bin/uv
-            chmod +x .venv/bin/uv
-            cp ../../target/release/ntep-launcher ntep-launcher
-            .venv/bin/python -c 'import sys; print(sys.version)'
-            .venv/bin/uv --version
+          cd package-root/NTEPilot
+          mkdir -p .venv/bin
+          export UV_PYTHON_INSTALL_DIR="$PWD/.venv/python"
+          uv python install --install-dir .venv/python --no-bin --managed-python 3.14.3
+          python_home="$(find .venv/python -maxdepth 1 -type d -name 'cpython-3.14.3-*' | head -n1)"
+          uv venv --allow-existing --relocatable --python "$python_home/bin/python3.14" .venv
+          cp "$NTEP_BOOTSTRAP_UV" .venv/bin/uv
+          chmod +x .venv/bin/uv
+          cp ../../target/release/ntep-launcher ntep-launcher
+          .venv/bin/python -c 'import sys; print(sys.version)'
+          .venv/bin/uv --version
 
-            cd ${{ github.workspace }}
-            rdfind -minsize 128 -makehardlinks true package-root/NTEPilot
-            uv run python - <<EOF
-            import tarfile, lzma
-            with tarfile.open('NTEP-Launcher-${{ runner.os }}-$(uname -m).tar.xz', 'x:xz', preset=9|lzma.PRESET_EXTREME) as t:
-              t.add('package-root/NTEPilot', arcname='NTEPilot')
-            EOF
-          windows: |
-            rm -r -fo package-root -ErrorAction SilentlyContinue
-            mkdir -ea 0 package-root\NTEPilot
-            robocopy NTEPilot-src package-root\NTEPilot /E /XD .git
-            if ($LASTEXITCODE -ge 8) { exit $LASTEXITCODE }
-            rm -r -fo package-root\NTEPilot\.git -ErrorAction SilentlyContinue
+          cd ${{ github.workspace }}
+          rdfind -minsize 128 -makehardlinks true package-root/NTEPilot
+          uv run python - <<EOF
+          import tarfile, lzma
+          with tarfile.open('NTEP-Launcher-${{ runner.os }}-$(uname -m).tar.xz', 'x:xz', preset=9|lzma.PRESET_EXTREME) as t:
+            t.add('package-root/NTEPilot', arcname='NTEPilot')
+          EOF
+      - name: Package Windows
+        if: ${{ startsWith(matrix.os, 'windows-') }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Remove-Item -Recurse -Force package-root -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force package-root\NTEPilot | Out-Null
+          robocopy NTEPilot-src package-root\NTEPilot /E /XD .git
+          if ($LASTEXITCODE -ge 8) { exit $LASTEXITCODE }
+          Remove-Item -Recurse -Force package-root\NTEPilot\.git -ErrorAction SilentlyContinue
 
-            cd package-root\NTEPilot
-            $env:UV_PYTHON_INSTALL_DIR = "$PWD\.venv\python"
-            uv python install --install-dir .venv\python --no-bin --managed-python 3.14.3
-            $python_home = Get-ChildItem .venv\python -Directory | Where-Object { $_.Name -like "cpython-3.14.3-*" } | Select-Object -First 1
-            uv venv --allow-existing --relocatable --python "$($python_home.FullName)\python.exe" .venv
-            cp $env:NTEP_BOOTSTRAP_UV .venv\Scripts\uv.exe
-            cp ..\..\target\release\ntep-launcher.exe ntep-launcher.exe
-            .venv\Scripts\python.exe -c "import sys; print(sys.version)"
-            .venv\Scripts\uv.exe --version
+          Push-Location package-root\NTEPilot
+          $env:UV_PYTHON_INSTALL_DIR = "$PWD\.venv\python"
+          uv python install --install-dir .venv\python --no-bin --managed-python 3.14.3
+          $python_home = Get-ChildItem .venv\python -Directory | Where-Object { $_.Name -like "cpython-3.14.3-*" } | Select-Object -First 1
+          if (!$python_home) {
+            throw "Managed Python 3.14.3 was not installed"
+          }
+          uv venv --allow-existing --relocatable --python "$($python_home.FullName)\python.exe" .venv
+          Copy-Item -LiteralPath $env:NTEP_BOOTSTRAP_UV -Destination .venv\Scripts\uv.exe -Force
+          Copy-Item -LiteralPath ..\..\target\release\ntep-launcher.exe -Destination ntep-launcher.exe -Force
+          .venv\Scripts\python.exe -c "import sys; print(sys.version)"
+          .venv\Scripts\uv.exe --version
+          Pop-Location
 
-            cd ${{ github.workspace }}
-            $installerArch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'x64' }
-            $isccCandidates = @(
-              "${env:ProgramFiles}\Inno Setup 7\ISCC.exe",
-              "${env:ProgramFiles(x86)}\Inno Setup 7\ISCC.exe",
-              "${env:ProgramFiles}\Inno Setup 6\ISCC.exe",
-              "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
-            )
-            $iscc = $isccCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-            if (!$iscc) {
-              throw "ISCC.exe was not found"
-            }
-            & $iscc install.iss "/DTargetArch=$installerArch" "/DAppVersion=$env:RELEASE_VERSION"
+          $installerArch = if ('${{ matrix.os }}' -eq 'windows-11-arm') { 'arm64' } else { 'x64' }
+          $isccCandidates = @(
+            "${env:ProgramFiles}\Inno Setup 7\ISCC.exe",
+            "${env:ProgramFiles(x86)}\Inno Setup 7\ISCC.exe",
+            "${env:ProgramFiles}\Inno Setup 6\ISCC.exe",
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          )
+          $iscc = $isccCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (!$iscc) {
+            throw "ISCC.exe was not found"
+          }
+          & $iscc install.iss "/DTargetArch=$installerArch" "/DAppVersion=$env:RELEASE_VERSION"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Inno Setup failed with exit code $LASTEXITCODE"
+          }
+
+          $installer = "installer-output\NTEP-Launcher-Windows-$installerArch-Setup.exe"
+          if (!(Test-Path $installer)) {
+            throw "Windows installer was not created: $installer"
+          }
+          Get-ChildItem installer-output
+      - name: Collect package artifacts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force release-assets | Out-Null
+
+          $artifacts = @()
+          foreach ($pattern in @('NTEP-Launcher-*.tar.xz', 'installer-output/*.exe')) {
+            $artifacts += Get-ChildItem -Path $pattern -File -ErrorAction SilentlyContinue
+          }
+
+          if (!$artifacts) {
+            throw "No package artifacts were produced"
+          }
+
+          foreach ($artifact in $artifacts) {
+            Copy-Item -LiteralPath $artifact.FullName -Destination release-assets -Force
+          }
+
+          Get-ChildItem release-assets
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: NTEP-Launcher-${{ matrix.os }}
-          path: |
-            NTEP-Launcher-${{ runner.os }}-*
-            installer-output/*.exe
+          path: release-assets/*
+          if-no-files-found: error
       - name: Release
         uses: softprops/action-gh-release@v2
         if: github.ref_type == 'tag'
         with:
           prerelease: true
-          files: |
-            NTEP-Launcher-${{ runner.os }}-*
-            installer-output/*.exe
+          fail_on_unmatched_files: true
+          files: release-assets/*
