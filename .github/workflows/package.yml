@@ -4,7 +4,11 @@ on:
   push:
     tags:
       - '*'
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version, for example 1.2.3 or v1.2.3
+        required: true
 
 env:
   UV_MANAGED_PYTHON: 1
@@ -34,11 +38,37 @@ jobs:
           macos: brew install rdfind
       - name: Checkout launcher
         uses: actions/checkout@v4
+      - name: Resolve release version
+        id: release_version
+        shell: pwsh
+        run: |
+          $rawVersion = if ('${{ github.ref_type }}' -eq 'tag') { '${{ github.ref_name }}' } else { '${{ inputs.version }}' }
+          $version = $rawVersion -replace '^v', ''
+          if ($version -notmatch '^\d+\.\d+\.\d+([+-][0-9A-Za-z.-]+)?$') {
+            throw "Release version '$rawVersion' must be SemVer, for example 1.2.3 or v1.2.3"
+          }
+          "RELEASE_VERSION=$version" >> $env:GITHUB_ENV
+          "RELEASE_TAG=$rawVersion" >> $env:GITHUB_ENV
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=$rawVersion" >> $env:GITHUB_OUTPUT
+
+          $cargo = Get-Content Cargo.toml -Raw
+          $cargo = $cargo -replace '(?m)^(version\s*=\s*")[^"]+(")', "`${1}$version`${2}"
+          Set-Content Cargo.toml $cargo -NoNewline
+
+          $tauri = Get-Content tauri.conf.json -Raw
+          $tauri = $tauri -replace '("version"\s*:\s*")[^"]+(")', "`${1}$version`${2}"
+          Set-Content tauri.conf.json $tauri -NoNewline
+
+          $plist = Get-Content Info.plist -Raw
+          $plist = $plist -replace '(<key>CFBundleShortVersionString</key>\s*<string>)[^<]+(</string>)', "`${1}$version`${2}"
+          $plist = $plist -replace '(<key>CFBundleVersion</key>\s*<string>)[^<]+(</string>)', "`${1}$version`${2}"
+          Set-Content Info.plist $plist -NoNewline
       - name: Checkout NTEPilot backend
         uses: actions/checkout@v4
         with:
           repository: NTEPilot/NTEPilot
-          ref: ${{ github.ref_name }}
+          ref: ${{ steps.release_version.outputs.tag }}
           path: NTEPilot-src
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -58,25 +88,22 @@ jobs:
           windows: rm -r -fo NTEPilot-src\frontend\node_modules -ErrorAction SilentlyContinue
       - name: Install uv
         uses: astral-sh/setup-uv@v5
-      - name: Prepare bootstrap uv
+      - name: Expose uv path
         uses: knicknic/os-specific-run@v1.0.3
         with:
           linux: |
-            mkdir -p bootstrap
-            cp "$(command -v uv)" bootstrap/uv
-            echo "NTEP_BOOTSTRAP_UV=$PWD/bootstrap/uv" >> "$GITHUB_ENV"
+            echo "NTEP_BOOTSTRAP_UV=$(command -v uv)" >> "$GITHUB_ENV"
           macos: |
-            mkdir -p bootstrap
-            cp "$(command -v uv)" bootstrap/uv
-            echo "NTEP_BOOTSTRAP_UV=$PWD/bootstrap/uv" >> "$GITHUB_ENV"
+            echo "NTEP_BOOTSTRAP_UV=$(command -v uv)" >> "$GITHUB_ENV"
           windows: |
-            mkdir -ea 0 bootstrap
-            cp (Get-Command uv).Source bootstrap\uv.exe
-            "NTEP_BOOTSTRAP_UV=$PWD\bootstrap\uv.exe" >> $env:GITHUB_ENV
+            "NTEP_BOOTSTRAP_UV=$((Get-Command uv).Source)" >> $env:GITHUB_ENV
       - name: Rustup for cache
         run: rustup toolchain install stable --profile minimal
       - name: Setup Rust cache
         uses: Swatinem/rust-cache@v2
+      - name: Install Inno Setup (Windows only)
+        if: ${{ startsWith(matrix.os, 'windows-') }}
+        run: choco install innosetup --no-progress -y
       - name: Build launcher
         run: cargo build --verbose --release
       - name: Package
@@ -90,12 +117,12 @@ jobs:
             rm -rf package-root/NTEPilot/.git
 
             cd package-root/NTEPilot
-            mkdir -p .venv/bin bootstrap
+            mkdir -p .venv/bin
             export UV_PYTHON_INSTALL_DIR="$PWD/.venv/python"
             uv python install --install-dir .venv/python --no-bin --managed-python 3.14.3
             python_home="$(find .venv/python -maxdepth 1 -type d -name 'cpython-3.14.3-*' | head -n1)"
             uv venv --allow-existing --relocatable --python "$python_home/bin/python3.14" .venv
-            cp ../../bootstrap/uv .venv/bin/uv
+            cp "$NTEP_BOOTSTRAP_UV" .venv/bin/uv
             chmod +x .venv/bin/uv
             .venv/bin/python -c 'import sys; print(sys.version)'
             .venv/bin/uv --version
@@ -121,12 +148,12 @@ jobs:
             rm -rf package-root/NTEPilot/.git
 
             cd package-root/NTEPilot
-            mkdir -p .venv/bin bootstrap
+            mkdir -p .venv/bin
             export UV_PYTHON_INSTALL_DIR="$PWD/.venv/python"
             uv python install --install-dir .venv/python --no-bin --managed-python 3.14.3
             python_home="$(find .venv/python -maxdepth 1 -type d -name 'cpython-3.14.3-*' | head -n1)"
             uv venv --allow-existing --relocatable --python "$python_home/bin/python3.14" .venv
-            cp ../../bootstrap/uv .venv/bin/uv
+            cp "$NTEP_BOOTSTRAP_UV" .venv/bin/uv
             chmod +x .venv/bin/uv
             cp ../../target/release/ntep-launcher ntep-launcher
             .venv/bin/python -c 'import sys; print(sys.version)'
@@ -147,29 +174,35 @@ jobs:
             rm -r -fo package-root\NTEPilot\.git -ErrorAction SilentlyContinue
 
             cd package-root\NTEPilot
-            mkdir -ea 0 bootstrap
             $env:UV_PYTHON_INSTALL_DIR = "$PWD\.venv\python"
             uv python install --install-dir .venv\python --no-bin --managed-python 3.14.3
             $python_home = Get-ChildItem .venv\python -Directory | Where-Object { $_.Name -like "cpython-3.14.3-*" } | Select-Object -First 1
             uv venv --allow-existing --relocatable --python "$($python_home.FullName)\python.exe" .venv
-            cp ..\..\bootstrap\uv.exe .venv\Scripts\uv.exe
+            cp $env:NTEP_BOOTSTRAP_UV .venv\Scripts\uv.exe
             cp ..\..\target\release\ntep-launcher.exe ntep-launcher.exe
             .venv\Scripts\python.exe -c "import sys; print(sys.version)"
             .venv\Scripts\uv.exe --version
 
             cd ${{ github.workspace }}
-            uv run python -c @"
-            import tarfile, lzma
-            arch = '$env:PROCESSOR_ARCHITECTURE'.lower()
-            with tarfile.open(f'NTEP-Launcher-${{ runner.os }}-{arch}.tar.xz', 'x:xz', preset=9|lzma.PRESET_EXTREME) as t:
-              t.add('package-root/NTEPilot', arcname='NTEPilot')
-            "@
+            $installerArch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'x64' }
+            $isccCandidates = @(
+              "${env:ProgramFiles}\Inno Setup 7\ISCC.exe",
+              "${env:ProgramFiles(x86)}\Inno Setup 7\ISCC.exe",
+              "${env:ProgramFiles}\Inno Setup 6\ISCC.exe",
+              "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+            )
+            $iscc = $isccCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+            if (!$iscc) {
+              throw "ISCC.exe was not found"
+            }
+            & $iscc install.iss "/DTargetArch=$installerArch" "/DAppVersion=$env:RELEASE_VERSION"
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: NTEP-Launcher-${{ matrix.os }}
           path: |
             NTEP-Launcher-${{ runner.os }}-*
+            installer-output/*.exe
       - name: Release
         uses: softprops/action-gh-release@v2
         if: github.ref_type == 'tag'
@@ -177,3 +210,4 @@ jobs:
           prerelease: true
           files: |
             NTEP-Launcher-${{ runner.os }}-*
+            installer-output/*.exe

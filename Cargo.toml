@@ -1,6 +1,6 @@
 [package]
 name = "ntep-launcher"
-version = "2.0.5"
+version = "0.0.0"
 description = "NTEP Launcher built with Tauri"
 authors = ["Jianfeng Zhang <swordfeng123@gmail.com>"]
 edition = "2021"
